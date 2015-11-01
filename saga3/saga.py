@@ -17,11 +17,31 @@ HIGH_INITIATIVE = 20
 MEDIUM_INITIATIVE = 10
 DEFAULT_INITIATIVE = 1
 
+class Stage(object):
+    """The world model"""
+    elapsed_time = 0
+
+    @property
+    def actors(self):
+        """Returns all the objects in the world that are people"""
+        return [obj for obj in self.objects if hasattr(obj, 'body')]
+
+    def find(self, obj_name):
+        """Find an object by name in the world and return the object"""
+
+        return next(obj for obj in self.objects + self.places if obj.name == obj_name)
+
+    def __init__(self):
+        self.objects = []
+        self.places = []
+
+stage = Stage()
+
 def check_initiative(actors):
     """For each actor, find out who gets to move next"""
     return max(actors, key=lambda x: x.initiative(), default=actors[0])
 
-def action(stage, actor):
+def action(actor):
     """At each step, evaluate what happens next"""
     # By default, let the current actor do his thing
     if stage.elapsed_time > MAX_TURNS:
@@ -37,7 +57,7 @@ def action(stage, actor):
 
     # If it's the same actor, just call this again
     if next_actor == actor:
-        return action(stage, actor)
+        return action(actor)
 
     return next_actor
 
@@ -45,18 +65,36 @@ class Thing(object):
     """An object with a name"""
     location = None
 
-    def __init__(self, name=None):
+    def move_to(self, place):
+        """Move an object from a current container (if it has one) to a new one."""
+        # Drop it from its current location if it has one
+        if self.location:
+            self.location = None
+        self.location = place
+
+    def __init__(self, name, preposition='on'):
+        stage.objects.append(self)
         self.name = name
+        self.preposition = preposition
 
     def __str__(self):
-        if self.location:
-            return "the {} is on the {}".format(self.name, self.location.name).capitalize()
         return self.name
+
+    def status(self):
+        if self.location and not isinstance(self.location, Person):  # Don't print the status of body parts
+            if isinstance(self.location, Place):
+                return "the {} is {} the {}".format(self.name, self.location.preposition, self.location.name).capitalize()
+            if isinstance(self.location, Thing):
+                return "the {} is {} the {}".format(self.name, self.location.preposition, self.location.name).capitalize()
 
 class Place(Thing):
     """A Place never has a location, and it doesn't print itself out in the world description."""
     is_open = True
     is_openable = False
+
+    def __init__(self, name=None):
+        super(Place, self).__init__(name)
+        stage.places.append(self)
 
 class Door(Place):
     """A door is a place that can be open or closed. If it's open, we'll print a different message when the actor
@@ -76,7 +114,7 @@ class Person(Thing):
 
     def initiative(self):
         """Return a value representative of how much this actor wants to do something based on their state"""
-        actor_initiative = 0
+        actor_initiative = DEFAULT_INITIATIVE
         if len(self.path) > 0:  # Actor really wants to be somewhere
             actor_initiative += HIGH_INITIATIVE
 
@@ -87,16 +125,23 @@ class Person(Thing):
         # If there's a target location, try to go there
         if len(self.path) > 0:
             next_location = self.path[0]
-            log.debug("Trying to go to next location %s", next_location)
-            print("go {} {}".format('through' if next_location.is_openable and next_location.is_open else 'to',
-                                    next_location))
             if self.go(next_location):
                 # If going there was successful, set their new location and drop it from the path
                 self.path = self.path[1:]
 
     def go(self, location):
         """Try to move to the next location. If that location can be opened, like a door, open it first
-        and return False (we didn't actually 'go'). Otherwise, set the new location."""
+        and return False (we didn't actually 'go'). Otherwise, set the new location.  If `location` is a string, find the
+        name of that location in the world."""
+
+        if isinstance(location, str):
+            location = self.stage.find(location)
+
+        log.debug("Trying to go to next location %s", location)
+
+        print("go {} {}".format('through' if location.is_openable and location.is_open else 'to',
+                                location))
+
         if not location.is_open:
             print("open {}".format(location.name))
             location.is_open = True
@@ -104,14 +149,11 @@ class Person(Thing):
         self.location = location
         return True
 
-    def has(self, obj_name):
+    def get_if_held(self, obj_name):
         """Does the actor have the named object in any of its body parts? If so, return the container where it is"""
-        if obj_name == self.right_hand.name:
-            return self.right_hand
-        if obj_name == self.left_hand.name:
-            return self.left_hand
-        if obj_name == self.body.name:
-            return self.body
+        obj = self.stage.find(obj_name)
+        if obj.location in self.parts:
+            return obj
 
     @property
     def is_alive(self):
@@ -126,30 +168,24 @@ class Person(Thing):
 
     def drop(self, obj, target):
         """Drop an object in a place or on a supporting object. Is a no-op if the actor doesn't have the object."""
-        if self.has(obj):
+        if self.get_if_held(obj.name):
 
             # Is the location a place or a supporter? A supporter will itself have a location; a place won't.
             if hasattr(target.location, 'location'):
                 print("put {} down at {}".format(obj.name, target.location.name))
             else:
                 print("put {} on {}".format(obj.name, target.name))
-            obj.location = target
-
+            obj.move_to(target)
 
     def __init__(self, name):
         super(Person, self).__init__(name)
-        self.path = []
         self.health = DEFAULT_HEALTH
+        self.path = []
+        self.right_hand = Thing("{}'s right hand".format(self.name), preposition='in')
+        self.left_hand = Thing("{}'s left hand".format(self.name), preposition='in')
+        self.body = Thing("{}".format(self.name))
+        self.parts = [self.left_hand, self.right_hand, self.body]
 
-    def __str__(self):
-        out = []
-        if self.right_hand:
-            out.append("the {} is in the {}'s right hand".format(self.right_hand.name, self.name))
-        if self.left_hand:
-            out.append("the {} is in the {}'s left hand".format(self.left_hand.name, self.name))
-        if self.body:
-            out.append("the {} is on the {}".format(self.body.name, self.name))
-        return '; '.join(out).capitalize()
 
 class Robber(Person):
     """The Robber wants to deposit the money, drink, kill the sheriff, and escape with the money"""
@@ -158,7 +194,7 @@ class Robber(Person):
 
         # If the Robber has the money and the Sheriff is alive,
         # the Robber wants to drop the money in the Corner
-        if self.has('money') and self.enemy.is_alive:
+        if self.get_if_held('money') and self.enemy.is_alive:
             actor_initiative += HIGH_INITIATIVE
 
         log.debug("%s is returning initiative %s", self.name, actor_initiative)
@@ -166,8 +202,9 @@ class Robber(Person):
 
     def act(self):
         """A set of conditions of high priority; these actions will be executed first"""
-        if self.location.name == 'corner' and self.has('money') and self.enemy.is_alive:
-            money = self.has('money')
+        log.debug(self.get_if_held('money'))
+        if self.location.name == 'corner' and self.get_if_held('money') and self.enemy.is_alive:
+            money = self.get_if_held('money')
             self.drop(money, self.location)
             return True
         return super(Robber, self).act()
@@ -184,7 +221,11 @@ class Sheriff(Person):
 
         # The Sheriff is subject to the global timer and will do nothing until it expires
         if self.stage.elapsed_time < self.delay:
-            return 0
+            actor_initiative = 0
+        elif self.location == None:
+            # If they haven't moved, tell them they want to move to the table
+            self.path = ['door', 'window']
+            actor_initiative += HIGH_INITIATIVE
 
         log.debug("%s is returning initiative %s", self.name, actor_initiative)
         return actor_initiative
@@ -195,32 +236,25 @@ class Gun(Thing):
         super(Gun, self).__init__(name)
         self.num_bullets = DEFAULT_NUM_BULLETS
 
-class Stage(object):
-    """The world model"""
-    elapsed_time = 0
-
-    @property
-    def actors(self):
-        """Returns all the objects in the world that are people"""
-        return [obj for obj in self.objects if hasattr(obj, 'body')]
-
-    def __init__(self):
-        self.objects = []
-
 def init(delay):
     """Initialize the starting conditions"""
-    stage = Stage()
 
     # Humans
     robber = Robber('robber')
-    robber.right_hand = Gun('gun')
-    robber.left_hand = Thing('money')
-    robber.body = Thing('holster')
+    robber_gun = Gun('gun')
+    robber_gun.move_to(robber.right_hand)
+    money = Thing('money')
+    money.move_to(robber.left_hand)
+    robber_holster = Thing('holster')
+    robber_holster.move_to(robber.body)
     robber.stage = stage  # A mechanism to get ahold of the world state
 
     sheriff = Sheriff('sheriff', delay=delay)
-    sheriff.right_hand = Gun("sheriff's gun")
-    sheriff.body = Thing("sheriff's holster")
+    sheriff_gun = Gun("sheriff's gun")
+    sheriff_gun.move_to(sheriff.right_hand)
+    holster = Thing("sheriff's holster")
+    holster.move_to(sheriff.body)
+
     sheriff.stage = stage
     robber.enemy = sheriff
     sheriff.enemy = robber
@@ -238,18 +272,13 @@ def init(delay):
     # Objects
     glass = Thing('glass')
     bottle = Thing('bottle')
-    glass.location = table
-    bottle.location = table
-
-    # Append them in the order the original made them appear
-    stage.objects.append(robber)
-    stage.objects.append(glass)
-    stage.objects.append(bottle)
-    stage.objects.append(sheriff)
+    glass.move_to(table)
+    bottle.move_to(table)
 
     # Start with the world status
     for obj in stage.objects:
-        print(str(obj) + '.', end=" ")
+        if not isinstance(obj, Person) and obj.status():
+            print(obj.status() + '.', end=" ")
 
     loop(stage)
 
