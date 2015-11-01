@@ -1,21 +1,31 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+import inspect
 import logging
+import random
+
 import coloredlogs
 coloredlogs.install(level=logging.DEBUG)
-
+coloredlogs.install(level=logging.INFO)
 log = logging.getLogger()
 
 DEFAULT_SHERIFF_DELAY = 5
 DEFAULT_NUM_BULLETS = 5
 DEFAULT_HEALTH = 5
-MAX_TURNS = 20
+MAX_TURNS = 50
 
 # Initiatives
 HIGH_INITIATIVE = 20
 MEDIUM_INITIATIVE = 10
-DEFAULT_INITIATIVE = 1
+DEFAULT_INITIATIVE = 3
+
+GUN_DAMAGE = {'miss': {'health': 0,
+                       'message': 'MISSED'},
+              'nick': {'health': -1,
+                       'message': '{} NICKED'},
+              'hit': {'health': -2,
+                      'message': '{} HIT'}}
 
 class Stage(object):
     """The world model"""
@@ -104,30 +114,80 @@ class Door(Place):
 
 class Person(Thing):
     """A person who has hands and a location and will exhibit behavior"""
-    right_hand = None
-    left_hand = None
-    body = None
     stage = None  # Hook for the world model
     enemy = None  # Kinda cheating but makes things easy
     default_location = None
-    health = 0  # 0 is bad, but we'll revive them on init
+    health = 0  # -1 is dead, but we'll revive them on init
+    is_dead = False
 
     def initiative(self):
         """Return a value representative of how much this actor wants to do something based on their state"""
-        actor_initiative = DEFAULT_INITIATIVE
+        if self.is_dead:
+            return -1
+
+        actor_initiative = random.randrange(0, DEFAULT_INITIATIVE)
+
         if len(self.path) > 0:  # Actor really wants to be somewhere
             actor_initiative += HIGH_INITIATIVE
+            log.debug("+ %s init change for path movement: %s/%s", self.name, HIGH_INITIATIVE, actor_initiative)
+
+        # If they're injured they're pretty mad
+        injury_bonus = DEFAULT_HEALTH - self.health
+        actor_initiative += injury_bonus
+        log.debug("+ %s init change for injury bonus: %s/%s", self.name, injury_bonus, actor_initiative)
+
+        # They're also more excited if they're running out of bullets
+        if self.get_if_held(Gun):
+            bullet_bonus = self.get_if_held(Gun).num_bullets
+            actor_initiative -= bullet_bonus
+            log.debug("- %s init change for bullet bonus: %s/%s", self.name, bullet_bonus, actor_initiative)
 
         return actor_initiative
 
     def act(self):
         """Do whatever is the next queued event"""
+        # If the actor just died, oops
+        if self.health <= 0:
+            print("{} dies.".format(self.name))
+            self.is_dead = True
+            return
+
         # If there's a target location, try to go there
         if len(self.path) > 0:
             next_location = self.path[0]
             if self.go(next_location):
                 # If going there was successful, set their new location and drop it from the path
                 self.path = self.path[1:]
+                return
+
+        # If the enemy is present, try to kill them!
+        if self.enemy_is_present():
+            # Pretend for now that you have the gun
+            self.shoot(self.enemy)
+            return
+
+    def enemy_is_present(self):
+        """Is the enemy visible and suitably shootable?"""
+        return self.enemy.location != None and self.enemy.is_alive
+
+    def shoot(self, target):
+        """Shoot first, ask questions never"""
+        gun = self.get_if_held(Gun)
+        if gun:
+            print("fire!")
+            log.debug("%s is trying to shoot %s", self.name, target.name)
+            hit_weight = 1
+            if gun.num_bullets == 1:
+                hit_weight += 1
+            if self.health < DEFAULT_HEALTH:
+                hit_weight += 1
+
+            weighted_hit_or_miss = [('miss', 3), ('nick', 5 * hit_weight), ('hit', 1 * hit_weight)]
+            hit_or_nick = random.choice([val for val, cnt in weighted_hit_or_miss for i in range(cnt)])
+            print(GUN_DAMAGE[hit_or_nick]['message'].format(target.name))
+            target.health += GUN_DAMAGE[hit_or_nick]['health']
+            gun.num_bullets -= 1
+
 
     def go(self, location):
         """Try to move to the next location. If that location can be opened, like a door, open it first
@@ -150,7 +210,15 @@ class Person(Thing):
         return True
 
     def get_if_held(self, obj_name):
-        """Does the actor have the named object in any of its body parts? If so, return the container where it is"""
+        """Does the actor have the named object or classname in any of its body parts? If so, return the container where it is"""
+        # First check if it's a classname (like Gun)
+        if inspect.isclass(obj_name):
+            # Check all the world models for objects of this type and try to find a match
+            for obj in stage.objects:
+                if isinstance(obj, obj_name) and obj.location in self.parts:
+                    return obj
+
+        # If not try to find the named object
         obj = self.stage.find(obj_name)
         if obj.location in self.parts:
             return obj
@@ -202,12 +270,13 @@ class Robber(Person):
 
     def act(self):
         """A set of conditions of high priority; these actions will be executed first"""
-        log.debug(self.get_if_held('money'))
+
         if self.location.name == 'corner' and self.get_if_held('money') and self.enemy.is_alive:
             money = self.get_if_held('money')
             self.drop(money, self.location)
             return True
         return super(Robber, self).act()
+
 
 class Sheriff(Person):
     """The Sheriff wants to kill the Robber and leave with the money. He does not drink and arrives
@@ -224,7 +293,7 @@ class Sheriff(Person):
             actor_initiative = 0
         elif self.location == None:
             # If they haven't moved, tell them they want to move to the table
-            self.path = ['door', 'window']
+            self.path = ['window',]
             actor_initiative += HIGH_INITIATIVE
 
         log.debug("%s is returning initiative %s", self.name, actor_initiative)
@@ -280,16 +349,16 @@ def init(delay):
         if not isinstance(obj, Person) and obj.status():
             print(obj.status() + '.', end=" ")
 
-    loop(stage)
+    loop()
 
-def loop(stage):
+def loop():
     """Main story loop, initialized by the delay before the sheriff arrives"""
     print()
     next_actor = stage.actors[0]
     while stage.elapsed_time < MAX_TURNS:
         print()
         print(next_actor.name.upper())
-        next_actor = action(stage, next_actor)
+        next_actor = action(next_actor)
 
 
 if __name__ == '__main__':
