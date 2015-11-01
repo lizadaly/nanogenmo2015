@@ -1,0 +1,24 @@
+# pylint: disable=missing-docstring,bad-builtin,invalid-name,no-absolute-import
+__revision__ = "$Id$"
+
+import functools
+
+# Don't do this, use a comprehension instead.
+assert [x*2 for x in [1, 2, 3]] == [2, 4, 6]
+
+assert [x for x in [1, 2, 3] if x != 1] == [2, 3]
+
+# It's still ok to use map and filter with anything but an inline lambda.
+double = lambda x: x * 2
+assert list(map(double, [1, 2, 3])) == [2, 4, 6]
+
+# It's also ok to pass lambdas to other functions.
+assert functools.reduce(lambda x, y: x * y, [1, 2, 3, 4]) == 24
+
+# Or to a undefined function or one with varargs
+def f(*a):
+    return len(a)
+
+f(lambda x, y: x + y, [1, 2, 3])
+
+undefined_function(lambda: 2)  # pylint: disable=undefined-variable

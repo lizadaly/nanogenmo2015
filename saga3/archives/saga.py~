@@ -1,0 +1,70 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+DEFAULT_DELAY = -1000
+
+class Thing(object):
+    def __init__(self, name=None):
+        self.name = name
+
+    def str(self):
+        return self.name
+    
+class Place(object):
+    pass
+
+class Person(object):
+    location = None
+    right_hand = None
+    left_hand = None
+
+    def __init__(self, name=None):
+        self.name = name
+        
+    def str(self):
+        if right_hand:
+            print("The {} is in the {}'s right hand".format(right_hand.str(), self.str()))
+        if left_hand:
+            print("The {} is in the {}'s left hand".format(right_hand.str(), self.str()))
+
+class Supporter(Thing):
+    pass
+
+class Gun(Thing):
+    pass
+
+class Glass(Thing):
+    pass
+
+class Table(Supporter):
+    pass
+
+class Holster(Thing):
+    pass
+
+
+def init(delay=DEFAULT_DELAY):
+    """Initialize the starting conditions"""
+    world = []
+
+    robber = Person()
+    robber.right_hand = Gun('gun')
+    robber.left_hand = Thing('money')
+    sheriff = Person()
+    sheriff.right_hand = Gun("sheriff's gun")
+    
+    world.append(robber)
+    world.append(sheriff)
+
+    loop(world)
+    
+def loop(world):
+    """Main story loop, initialized by the delay before the sheriff arrives"""
+    for obj in world:
+        print(obj.str())
+    
+if __name__ == '__main__':
+    # delay = 0 means the SHERIFF arrives immediately
+    delay = input('Select arrival time for SHERIFF:')
+    init(delay)
+    
