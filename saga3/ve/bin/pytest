@@ -1,7 +1,0 @@
-#!/Users/liza/github/nanogenmo2015/saga3/ve/bin/python3.5
-
-import warnings
-warnings.simplefilter('default', DeprecationWarning)
-
-from logilab.common.pytest import run
-run()
