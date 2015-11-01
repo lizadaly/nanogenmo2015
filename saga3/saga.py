@@ -7,18 +7,18 @@ import random
 
 import coloredlogs
 coloredlogs.install(level=logging.DEBUG)
-coloredlogs.install(level=logging.INFO)
+#coloredlogs.install(level=logging.INFO)
 log = logging.getLogger()
 
-DEFAULT_SHERIFF_DELAY = 5
+DEFAULT_SHERIFF_DELAY = 15
 DEFAULT_NUM_BULLETS = 5
 DEFAULT_HEALTH = 5
 MAX_TURNS = 50
 
 # Initiatives
-HIGH_INITIATIVE = 20
-MEDIUM_INITIATIVE = 10
-DEFAULT_INITIATIVE = 3
+HIGH_INITIATIVE = 30
+MEDIUM_INITIATIVE = 20
+DEFAULT_INITIATIVE = 10
 
 GUN_DAMAGE = {'miss': {'health': 0,
                        'message': 'MISSED'},
@@ -87,6 +87,9 @@ class Thing(object):
         self.name = name
         self.preposition = preposition
 
+    def __repr__(self):
+        return self.name
+
     def __str__(self):
         return self.name
 
@@ -112,6 +115,14 @@ class Door(Place):
     is_openable = True
     is_open = False
 
+    def close(self):
+        print("close door")
+        self.is_open = False
+
+    def open(self):
+        print("open door")
+        self.is_open = True
+
 class Person(Thing):
     """A person who has hands and a location and will exhibit behavior"""
     stage = None  # Hook for the world model
@@ -123,7 +134,7 @@ class Person(Thing):
     def initiative(self):
         """Return a value representative of how much this actor wants to do something based on their state"""
         if self.is_dead:
-            return -1
+            return -9999
 
         actor_initiative = random.randrange(0, DEFAULT_INITIATIVE)
 
@@ -142,7 +153,7 @@ class Person(Thing):
             actor_initiative -= bullet_bonus
             log.debug("- %s init change for bullet bonus: %s/%s", self.name, bullet_bonus, actor_initiative)
 
-        return actor_initiative
+        return max(1, actor_initiative)
 
     def act(self):
         """Do whatever is the next queued event"""
@@ -152,13 +163,19 @@ class Person(Thing):
             self.is_dead = True
             return
 
+        # If there's a queued event, hit that first
+        if len(self.queue) > 0:
+            self.queue[0]()
+            self.queue = self.queue[1:]
+            return
+
         # If there's a target location, try to go there
         if len(self.path) > 0:
             next_location = self.path[0]
             if self.go(next_location):
                 # If going there was successful, set their new location and drop it from the path
                 self.path = self.path[1:]
-                return
+            return
 
         # If the enemy is present, try to kill them!
         if self.enemy_is_present():
@@ -166,8 +183,19 @@ class Person(Thing):
             self.shoot(self.enemy)
             return
 
+        log.debug("%s had nothing better to do and is wandering around...", self.name)
+        self.go_to_random_location()
+
+    def go_to_random_location(self):
+        """Randomly go to a location that isn't the current one"""
+        location = next(place for place in stage.places if place != self.location)
+        self.go(location)
+
     def enemy_is_present(self):
         """Is the enemy visible and suitably shootable?"""
+        log.debug(self.enemy.name)
+        log.debug(self.enemy.location)
+        log.debug(self.enemy.is_alive)
         return self.enemy.location != None and self.enemy.is_alive
 
     def shoot(self, target):
@@ -190,22 +218,24 @@ class Person(Thing):
 
 
     def go(self, location):
-        """Try to move to the next location. If that location can be opened, like a door, open it first
-        and return False (we didn't actually 'go'). Otherwise, set the new location.  If `location` is a string, find the
+        """Try to move to the next location. If that location can be opened, like a door, open it first.
+        Otherwise, set the new location.  If `location` is a string, find the
         name of that location in the world."""
 
         if isinstance(location, str):
             location = self.stage.find(location)
 
         log.debug("Trying to go to next location %s", location)
-
-        print("go {} {}".format('through' if location.is_openable and location.is_open else 'to',
-                                location))
-
-        if not location.is_open:
-            print("open {}".format(location.name))
-            location.is_open = True
+        if location.is_openable and not location.is_open:
+            location.open()
             return False
+
+        if location.is_openable and location.is_open:
+            print("go through {}".format(location))
+            self.queue.append(location.close)
+        else:
+            print("go to {}".format(location))
+
         self.location = location
         return True
 
@@ -248,7 +278,8 @@ class Person(Thing):
     def __init__(self, name):
         super(Person, self).__init__(name)
         self.health = DEFAULT_HEALTH
-        self.path = []
+        self.path = []  # A path of Places the person is currently walking
+        self.queue = []  # A queue of functions to call next
         self.right_hand = Thing("{}'s right hand".format(self.name), preposition='in')
         self.left_hand = Thing("{}'s left hand".format(self.name), preposition='in')
         self.body = Thing("{}".format(self.name))
@@ -279,7 +310,7 @@ class Robber(Person):
 
 
 class Sheriff(Person):
-    """The Sheriff wants to kill the Robber and leave with the money. He does not drink and arrives
+    """The Sheriff wants to kill the Robber and leave with the money. He does not drink as often and arrives
     on a delay."""
     def __init__(self, name, delay):
         super(Sheriff, self).__init__(name)
@@ -291,13 +322,19 @@ class Sheriff(Person):
         # The Sheriff is subject to the global timer and will do nothing until it expires
         if self.stage.elapsed_time < self.delay:
             actor_initiative = 0
+
         elif self.location == None:
             # If they haven't moved, tell them they want to move to the table
-            self.path = ['window',]
             actor_initiative += HIGH_INITIATIVE
 
         log.debug("%s is returning initiative %s", self.name, actor_initiative)
         return actor_initiative
+
+    def act(self):
+        """The Sheriff wants to get in the house right away"""
+        if self.location == None:
+            self.path = ['window', 'door']
+        return super(Sheriff, self).act()
 
 class Gun(Thing):
     """A Gun is an object with a distinct property of being shootable and having a number of bullets"""
