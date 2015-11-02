@@ -4,10 +4,11 @@
 import inspect
 import logging
 import random
+import sys
 
 import coloredlogs
 coloredlogs.install(level=logging.DEBUG)
-#coloredlogs.install(level=logging.INFO)
+coloredlogs.install(level=logging.INFO)
 log = logging.getLogger()
 
 DEFAULT_SHERIFF_DELAY = 15
@@ -165,7 +166,11 @@ class Person(Thing):
 
         # If there's a queued event, hit that first
         if len(self.queue) > 0:
-            self.queue[0]()
+            cmd, args = self.queue[0]
+            if args:
+                cmd(**args)
+            else:
+                cmd()
             self.queue = self.queue[1:]
             return
 
@@ -183,12 +188,42 @@ class Person(Thing):
             self.shoot(self.enemy)
             return
 
-        log.debug("%s had nothing better to do and is wandering around...", self.name)
+        # If the enemy is dead, take the money and run
+        if self.enemy.is_dead:
+            log.debug("*** Trying to get the money")
+            money = self.stage.find('money')
+            if self.location == money.location:
+                return self.take(money)
+            # End game! Flee with the money!
+            if self.get_if_held('money'):
+                self.path = ['door', None]
+                self.escaped = True
+
+        #log.debug("%s had nothing better to do and is wandering around...", self.name)
         self.go_to_random_location()
+
+    def take(self, obj):
+        """Try to take an object. If there's no hand available, drop an object and queue taking
+        the object. Return True if the object was taken or False if no hands available."""
+        right_obj = self.get_held_obj(self.right_hand)
+        if not right_obj:
+            print("Pick up the {} with the {}".format(obj.name, self.right_hand.name))
+            obj.move_to(self.right_hand)
+            return True
+        left_obj = self.get_held_obj(self.left_hand)
+        if not left_obj:
+            print("Pick up the {} with the {}".format(obj.name, self.left_hand.name))
+            obj.move_to(self.left_hand)
+            return True
+
+        # Drop the thing in the right hand by default
+        self.drop(right_obj, self.location)
+        self.queue.append((self.take, obj))
+
 
     def go_to_random_location(self):
         """Randomly go to a location that isn't the current one"""
-        location = next(place for place in stage.places if place != self.location)
+        location = random.choice([place for place in stage.places if place != self.location])
         self.go(location)
 
     def enemy_is_present(self):
@@ -226,13 +261,17 @@ class Person(Thing):
             location = self.stage.find(location)
 
         log.debug("Trying to go to next location %s", location)
+        if not location and self.escaped:
+            print("CURTAIN")
+            sys.exit(0)
+
         if location.is_openable and not location.is_open:
             location.open()
             return False
 
         if location.is_openable and location.is_open:
             print("go through {}".format(location))
-            self.queue.append(location.close)
+            self.queue.append((location.close, None))
         else:
             print("go to {}".format(location))
 
@@ -252,6 +291,12 @@ class Person(Thing):
         obj = self.stage.find(obj_name)
         if obj.location in self.parts:
             return obj
+
+    def get_held_obj(self, part):
+        """Get the object held by a given body part. Returns None if the body part isn't holding anything"""
+        for obj in stage.objects:
+            if obj.location == part:
+                return part
 
     @property
     def is_alive(self):
@@ -284,7 +329,7 @@ class Person(Thing):
         self.left_hand = Thing("{}'s left hand".format(self.name), preposition='in')
         self.body = Thing("{}".format(self.name))
         self.parts = [self.left_hand, self.right_hand, self.body]
-
+        self.escaped = False  # The final endgame state
 
 class Robber(Person):
     """The Robber wants to deposit the money, drink, kill the sheriff, and escape with the money"""
