@@ -11,10 +11,10 @@ coloredlogs.install(level=logging.DEBUG)
 coloredlogs.install(level=logging.INFO)
 log = logging.getLogger()
 
-DEFAULT_SHERIFF_DELAY = 15
+DEFAULT_SHERIFF_DELAY = 20
 DEFAULT_NUM_BULLETS = 5
 DEFAULT_HEALTH = 5
-MAX_TURNS = 100
+MAX_TURNS = 1000
 
 # Initiatives
 HIGH_INITIATIVE = 30
@@ -170,6 +170,7 @@ class Person(Thing):
         # If there's a queued event, hit that first
         if len(self.queue) > 0:
             cmd, args = self.queue[0]
+            log.debug("Running queued command: %s %s", cmd, args)
             if args:
                 cmd(args)
             else:
@@ -202,18 +203,42 @@ class Person(Thing):
                 self.path = ['door', None]
                 self.escaped = True
 
-        # Try to get a random drink
-        container = stage.find(random.choice(('glass', 'bottle')))
-        # If we're holding it, just drink it
-        if self.get_if_held(container):
-            print("take a drink from {}".format(container))
-            return True
+        # Random behaviors
+        weighted_choice = [('drink', 5), ('wander', 3), ('check', 1), ('lean', 2), ('count', 1), ('drop', 1)]
+        choice = random.choice([val for val, cnt in weighted_choice for i in range(cnt)])
+        if choice == 'drink':
+            # Try to get a random drink
+            container = stage.find(random.choice(('glass', 'bottle')))
+            # If we're holding it, just drink it
+            if self.get_if_held(container):
+                print("take a drink from {}".format(container))
+                return True
 
-        if self.can_reach_obj(container):
-            self.take(container)
+            if self.can_reach_obj(container):
+                self.take(container)
+                return True
+        elif choice == 'wander':
+            return self.go_to_random_location()
+        elif choice == 'check':
+            if self.get_if_held(Gun):
+                print("check gun")
             return True
-
-        self.go_to_random_location()
+        elif choice == 'count':
+            if self.can_reach_obj(stage.find('money')):
+                print("count money")
+                return True
+        elif choice == 'lean':
+            if self.location == stage.find('window'):
+                print('lean on window and look')
+                return True
+        elif choice == 'drop':  # Drop a random object that isn't the gun
+            obj = self.get_held_obj(self.right_hand)
+            if obj and not isinstance(obj, Gun):
+                self.drop(obj, self.location)
+            else:
+                obj = self.get_held_obj(self.left_hand)
+                if obj and not isinstance(obj, Gun):
+                    self.drop(obj, self.location)
 
     def can_reach_obj(self, obj):
         """True if the Person can reach the object in question. The object must be either directly
@@ -226,20 +251,15 @@ class Person(Thing):
     def take(self, obj):
         """Try to take an object. If there's no hand available, drop an object and queue taking
         the object. Return True if the object was taken or False if no hands available."""
-        right_obj = self.get_held_obj(self.right_hand)
-        if not right_obj:
-            print("Pick up the {} with the {}".format(obj.name, self.right_hand.name))
-            obj.move_to(self.right_hand)
+        free_hand = self.free_hand()
+        if free_hand:
+            print("pick up the {} with the {}".format(obj.name, free_hand.name))
+            obj.move_to(free_hand)
             return True
-        left_obj = self.get_held_obj(self.left_hand)
-        if not left_obj:
-            print("Pick up the {} with the {}".format(obj.name, self.left_hand.name))
-            obj.move_to(self.left_hand)
-            return True
-
-        # Drop the thing in the right hand by default
-        self.drop(right_obj, self.location)
-        self.queue.append((self.take, obj))
+        else:
+            # Drop the thing in a random hand and queue picking up the thing
+            self.drop(self.get_held_obj(random.choice((self.right_hand, self.left_hand))), self.location)
+            self.queue.append((self.take, obj))
 
 
     def go_to_random_location(self):
@@ -249,9 +269,6 @@ class Person(Thing):
 
     def enemy_is_present(self):
         """Is the enemy visible and suitably shootable?"""
-        log.debug(self.enemy.name)
-        log.debug(self.enemy.location)
-        log.debug(self.enemy.is_alive)
         return self.enemy.location != None and self.enemy.is_alive
 
     def shoot(self, target):
@@ -309,7 +326,7 @@ class Person(Thing):
                     return obj
 
         if isinstance(obj_name, str):
-            # If not try to find the named object
+            # If not, try to find the named object
             obj = self.stage.find(obj_name)
         else:
             obj = obj_name
@@ -320,7 +337,21 @@ class Person(Thing):
         """Get the object held by a given body part. Returns None if the body part isn't holding anything"""
         for obj in stage.objects:
             if obj.location == part:
-                return part
+                return obj
+
+    def free_hand(self):
+        """Return the hand that isn't holding anything"""
+        right_free = True
+        left_free = True
+        for obj in stage.objects:
+            if obj.location == self.right_hand:
+                right_free = False
+            elif obj.location == self.left_hand:
+                left_free = False
+        if right_free:
+            return self.right_hand
+        if left_free:
+            return self.left_hand
 
     @property
     def is_alive(self):
@@ -407,6 +438,7 @@ class Sheriff(Person):
 
 class Gun(Thing):
     """A Gun is an object with a distinct property of being shootable and having a number of bullets"""
+    num_bullets = 0
     def __init__(self, name):
         super(Gun, self).__init__(name)
         self.num_bullets = DEFAULT_NUM_BULLETS
