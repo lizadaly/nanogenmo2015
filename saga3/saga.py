@@ -14,7 +14,7 @@ log = logging.getLogger()
 DEFAULT_SHERIFF_DELAY = 15
 DEFAULT_NUM_BULLETS = 5
 DEFAULT_HEALTH = 5
-MAX_TURNS = 50
+MAX_TURNS = 100
 
 # Initiatives
 HIGH_INITIATIVE = 30
@@ -39,7 +39,6 @@ class Stage(object):
 
     def find(self, obj_name):
         """Find an object by name in the world and return the object"""
-
         return next(obj for obj in self.objects + self.places if obj.name == obj_name)
 
     def __init__(self):
@@ -134,8 +133,12 @@ class Person(Thing):
 
     def initiative(self):
         """Return a value representative of how much this actor wants to do something based on their state"""
-        if self.is_dead:
+        if self.is_dead:  # If they're already dead they're pretty lacking in initiative
             return -9999
+
+        # If they _just_ died, give them a huge initiative bonus so we "cut" to their scene
+        if self.health <= 0:
+            return 9999
 
         actor_initiative = random.randrange(0, DEFAULT_INITIATIVE)
 
@@ -148,10 +151,10 @@ class Person(Thing):
         actor_initiative += injury_bonus
         log.debug("+ %s init change for injury bonus: %s/%s", self.name, injury_bonus, actor_initiative)
 
-        # They're also more excited if they're running out of bullets
+        # They're also more excited if they're almost out of bullets
         if self.get_if_held(Gun):
-            bullet_bonus = self.get_if_held(Gun).num_bullets
-            actor_initiative -= bullet_bonus
+            bullet_bonus = 10 if self.get_if_held(Gun).num_bullets == 1 else 0
+            actor_initiative += bullet_bonus
             log.debug("- %s init change for bullet bonus: %s/%s", self.name, bullet_bonus, actor_initiative)
 
         return max(1, actor_initiative)
@@ -168,7 +171,7 @@ class Person(Thing):
         if len(self.queue) > 0:
             cmd, args = self.queue[0]
             if args:
-                cmd(**args)
+                cmd(args)
             else:
                 cmd()
             self.queue = self.queue[1:]
@@ -199,8 +202,26 @@ class Person(Thing):
                 self.path = ['door', None]
                 self.escaped = True
 
-        #log.debug("%s had nothing better to do and is wandering around...", self.name)
+        # Try to get a random drink
+        container = stage.find(random.choice(('glass', 'bottle')))
+        # If we're holding it, just drink it
+        if self.get_if_held(container):
+            print("take a drink from {}".format(container))
+            return True
+
+        if self.can_reach_obj(container):
+            self.take(container)
+            return True
+
         self.go_to_random_location()
+
+    def can_reach_obj(self, obj):
+        """True if the Person can reach the object in question. The object must be either directly
+        in the same location, or on a visible supporter in the location"""
+        if self.location == obj.location:
+            return True
+        if hasattr(obj.location, 'location') and obj.location.location == self.location:
+            return True
 
     def take(self, obj):
         """Try to take an object. If there's no hand available, drop an object and queue taking
@@ -279,7 +300,7 @@ class Person(Thing):
         return True
 
     def get_if_held(self, obj_name):
-        """Does the actor have the named object or classname in any of its body parts? If so, return the container where it is"""
+        """Does the actor have the object name, object, or classname in any of its body parts? If so, return the container where it is"""
         # First check if it's a classname (like Gun)
         if inspect.isclass(obj_name):
             # Check all the world models for objects of this type and try to find a match
@@ -287,8 +308,11 @@ class Person(Thing):
                 if isinstance(obj, obj_name) and obj.location in self.parts:
                     return obj
 
-        # If not try to find the named object
-        obj = self.stage.find(obj_name)
+        if isinstance(obj_name, str):
+            # If not try to find the named object
+            obj = self.stage.find(obj_name)
+        else:
+            obj = obj_name
         if obj.location in self.parts:
             return obj
 
@@ -387,6 +411,12 @@ class Gun(Thing):
         super(Gun, self).__init__(name)
         self.num_bullets = DEFAULT_NUM_BULLETS
 
+class Container(Thing):
+    """A Container is a vessel that can contain a thing (whisky)"""
+    def __init__(self, name):
+        super(Container, self).__init__(name)
+        self.full = False
+
 def init(delay):
     """Initialize the starting conditions"""
 
@@ -421,8 +451,9 @@ def init(delay):
     robber.path = [door, corner]
 
     # Objects
-    glass = Thing('glass')
-    bottle = Thing('bottle')
+    glass = Container('glass')
+    bottle = Container('bottle')
+    bottle.full = True
     glass.move_to(table)
     bottle.move_to(table)
 
