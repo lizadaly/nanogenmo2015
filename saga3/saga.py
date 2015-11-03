@@ -4,17 +4,13 @@
 import inspect
 import logging
 import random
-import sys
 
-import coloredlogs
-coloredlogs.install(level=logging.DEBUG)
-coloredlogs.install(level=logging.INFO)
 log = logging.getLogger()
 
 DEFAULT_SHERIFF_DELAY = 20
 DEFAULT_NUM_BULLETS = 5
 DEFAULT_HEALTH = 5
-MAX_TURNS = 1000
+MAX_SCENES = 350  # ~150 words per scene
 
 # Initiatives
 HIGH_INITIATIVE = 30
@@ -31,6 +27,7 @@ GUN_DAMAGE = {'miss': {'health': 0,
 class Stage(object):
     """The world model"""
     elapsed_time = 0
+    current_scene = 0
 
     @property
     def actors(self):
@@ -54,9 +51,6 @@ def check_initiative(actors):
 def action(actor):
     """At each step, evaluate what happens next"""
     # By default, let the current actor do his thing
-    if stage.elapsed_time > MAX_TURNS:
-        return actor
-
     log.debug("Starting action for actor %s", actor)
     actor.set_starting_location(actor.default_location)
     actor.act()
@@ -65,6 +59,8 @@ def action(actor):
 
     # Determine who acts next
     next_actor = check_initiative(stage.actors)
+    if next_actor.escaped:
+        return next_actor
 
     # If it's the same actor, just call this again
     if next_actor == actor:
@@ -357,9 +353,6 @@ class Person(Thing):
             location = self.stage.find(location)
 
         log.debug("Trying to go to next location %s", location)
-        if not location and self.escaped:
-            print("CURTAIN")
-            sys.exit(0)
 
         if location.is_openable and not location.is_open:
             location.open()
@@ -582,24 +575,39 @@ def init(delay):
     glass.move_to(table)
     bottle.move_to(table)
 
-    # Start with the world status
-    for obj in stage.objects:
-        if not isinstance(obj, Person) and obj.status():
-            print(obj.status() + '.', end=" ")
+    stage.current_scene += 1
 
     loop()
 
 def loop():
     """Main story loop, initialized by the delay before the sheriff arrives"""
+    # Start with the world status
+    print ("\nAct 1 Scene {}\n\n".format(stage.current_scene))
+    for obj in stage.objects:
+        if not isinstance(obj, Person) and obj.status():
+            print(obj.status() + '.', end=" ")
+
     print()
     next_actor = stage.actors[0]
-    while stage.elapsed_time < MAX_TURNS:
+    while True:
         print()
         print(next_actor.name.upper())
-        next_actor = action(next_actor)
 
+        next_actor = action(next_actor)
+        if next_actor.escaped:
+            print("CURTAIN")
+            stage.objects = []
+            stage.places = []
+            break
 
 if __name__ == '__main__':
-    # delay = 0 means the SHERIFF arrives immediately
-    # delay = input('Select arrival time for SHERIFF:')
-    init(delay=DEFAULT_SHERIFF_DELAY)
+    delay = input('Select arrival time for SHERIFF or ENTER for default: ') or DEFAULT_SHERIFF_DELAY
+    print("""
+
+SAGA III
+An Original Play
+by
+A Computer """)
+
+    for i in range(0, MAX_SCENES):
+        init(delay=int(delay))
