@@ -11,7 +11,7 @@ coloredlogs.install(level=logging.DEBUG)
 coloredlogs.install(level=logging.INFO)
 log = logging.getLogger()
 
-DEFAULT_SHERIFF_DELAY = 20
+DEFAULT_SHERIFF_DELAY = 50
 DEFAULT_NUM_BULLETS = 5
 DEFAULT_HEALTH = 5
 MAX_TURNS = 1000
@@ -130,6 +130,7 @@ class Person(Thing):
     default_location = None
     health = 0  # -1 is dead, but we'll revive them on init
     is_dead = False
+    inebriation = 0
 
     def initiative(self):
         """Return a value representative of how much this actor wants to do something based on their state"""
@@ -204,19 +205,38 @@ class Person(Thing):
                 self.escaped = True
 
         # Random behaviors
-        weighted_choice = [('drink', 5), ('wander', 3), ('check', 1), ('lean', 2), ('count', 1), ('drop', 1)]
+        weighted_choice = [('drink', 5), ('wander', 3), ('check', 1), ('lean', 1), ('count', 1), ('drop', 1)]
         choice = random.choice([val for val, cnt in weighted_choice for i in range(cnt)])
         if choice == 'drink':
-            # Try to get a random drink
-            container = stage.find(random.choice(('glass', 'bottle')))
-            # If we're holding it, just drink it
-            if self.get_if_held(container):
-                print("take a drink from {}".format(container))
-                return True
-
-            if self.can_reach_obj(container):
-                self.take(container)
-                return True
+            # Try to drink from the glass if we're holding it
+            glass = stage.find('glass')
+            if self.get_if_held('glass'):
+                # ...and it's full, just drink from it
+                if glass.full:
+                    glass.drink(self)
+                # If not, try to pour a glass from the bottle
+                else:
+                    bottle = stage.find('bottle')
+                    if self.get_if_held(bottle):
+                        bottle.pour(glass)
+                        # Be sure to add queued events in reverse order because queues
+                        self.queue.append((glass.drink, self))
+                        self.queue.append((self.take, glass))
+                        return True
+                    # If we don't have the bottle and can reach it, take it and
+                    # then queue pouring it and drinking from it
+                    else:
+                        if self.can_reach_obj(bottle):
+                            self.take(bottle)
+                            self.queue.append((glass.drink, self))
+                            self.queue.append((self.take, glass))
+                            self.queue.append((bottle.pour, glass))
+                            return True
+            # If we don't have the glass, try to get it
+            else:
+                if self.can_reach_obj(glass):
+                    self.take(glass)
+                    return True
         elif choice == 'wander':
             return self.go_to_random_location()
         elif choice == 'check':
@@ -253,7 +273,7 @@ class Person(Thing):
         the object. Return True if the object was taken or False if no hands available."""
         free_hand = self.free_hand()
         if free_hand:
-            print("pick up the {} with the {}".format(obj.name, free_hand.name))
+            print("pick up the {} with the {}".format(obj, free_hand))
             obj.move_to(free_hand)
             return True
         else:
@@ -445,9 +465,35 @@ class Gun(Thing):
 
 class Container(Thing):
     """A Container is a vessel that can contain a thing (whisky)"""
+    volume = 0
+
     def __init__(self, name):
         super(Container, self).__init__(name)
-        self.full = False
+
+    @property
+    def full(self):
+        """A container is 'full' if it contains any volume"""
+
+        return self.volume > 0
+    def pour(self, new_container):
+        """Pouring from a full container into an empty container makes
+        the other container full. It doesn't make the source container
+        any less full because magic. If the source container is empty,
+        this is a no-op. Returns True if the pour succeeded."""
+        if self.full:
+            print("pour")
+            new_container.volume = 3
+            return True
+
+    def drink(self, actor):
+        """Drinking from a full container changes the inebriation status
+        of the actor. Drinking from an empty glass has no effect.
+        Returns True if the drink succeeded."""
+        if self.full:
+            print("take a drink from {}".format(self))
+            actor.inebriation += 1
+            self.volume -= 1
+            return True
 
 def init(delay):
     """Initialize the starting conditions"""
@@ -485,7 +531,7 @@ def init(delay):
     # Objects
     glass = Container('glass')
     bottle = Container('bottle')
-    bottle.full = True
+    bottle.volume = 10
     glass.move_to(table)
     bottle.move_to(table)
 
