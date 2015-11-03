@@ -24,7 +24,7 @@ The Art of Computer Programming, Volume 2 by Donald Knuth contains two examples 
 the original out. I used this as my reference implementation:
 
 ![Page](images/knuth-quote.png)
-<a href="https://www.safaribooksonline.com/a/art-of-computer/514751/">First example</a> and <a href="https://www.safaribooksonline.com/a/art-of-computer/514752/">second example</a>
+<a href="https://www.safaribooksonline.com/a/art-of-computer/514751/">First example</a> and <a href="https://www.safaribooksonline.com/a/art-of-computer/514752/">second example</a> [links are to the excerpts on <a href="https://www.safaribooksonline.com/">Safari</a>]
 
 Implementation details
 ----------------
