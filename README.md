@@ -41,7 +41,8 @@ The code is pure Python 3, no dependencies. In its default mode, it runs
 through a single scene and outputs a simple text file mimicing the original
 (line breaks shortened for brevity):
 
-```The gun is in the robber's right hand. The money is in the robber's left hand. The holster is on the robber. The sheriff's gun is in the sheriff's right hand. The sheriff's holster is on the sheriff. The glass is on the table. The bottle is on the table.
+```
+The gun is in the robber's right hand. The money is in the robber's left hand. The holster is on the robber. The sheriff's gun is in the sheriff's right hand. The sheriff's holster is on the sheriff. The glass is on the table. The bottle is on the table.
 
 ROBBER
 (The robber is at the window.) Open door; go through door; close door; go to corner; put money on corner; go to table; go to window; check gun; go to corner; go to table; pick up the glass with the robber's left hand; go to window; go to corner; count money
@@ -82,4 +83,4 @@ CURTAIN
 The Story
 ---------
 
-<a href="sage-3.txt">A teleplay in one act, 350 scenes and 53,392 words.</a>
+In this, the Director's Cut, 349 scenes were restored to meet the 50,000 word rule. <a href="sage-3.txt">SAGA III: A teleplay in one act, 350 scenes and 53,392 words.</a>
