@@ -38,8 +38,7 @@ try to back-port the logic, including some pretty tedious manual
 manipulation of objects.
 
 The code is pure Python 3, no dependencies. In its default mode, it runs
-through a single scene and outputs a simple text file mimicing the original
-(line breaks shortened for brevity):
+through a single scene and outputs a simple text file (line breaks shortened for brevity):
 
 ```
  The gun is in the robber's right hand. The money is in the robber's
