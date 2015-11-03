@@ -11,7 +11,7 @@ coloredlogs.install(level=logging.DEBUG)
 coloredlogs.install(level=logging.INFO)
 log = logging.getLogger()
 
-DEFAULT_SHERIFF_DELAY = 50
+DEFAULT_SHERIFF_DELAY = 20
 DEFAULT_NUM_BULLETS = 5
 DEFAULT_HEALTH = 5
 MAX_TURNS = 1000
@@ -171,10 +171,10 @@ class Person(Thing):
 
         # If there's a queued event, hit that first
         if len(self.queue) > 0:
-            cmd, args = self.queue[0]
+            cmd, *args = self.queue[0]
             log.debug("Running queued command: %s %s", cmd, args)
             if args:
-                cmd(args)
+                cmd(*args)
             else:
                 cmd()
             self.queue = self.queue[1:]
@@ -209,6 +209,13 @@ class Person(Thing):
 
         # If the enemy is dead, take the money and run
         if self.enemy.is_dead:
+            # Blow out the gun if we still have it
+            gun = self.get_if_held(Gun)
+            holster = self.get_if_held(Holster)
+            if gun and not gun.location == holster:
+                print("blow out barrel")
+                self.queue.append((self.drop, gun, holster))
+                return True
             log.debug("*** Trying to get the money")
             money = self.stage.find('money')
             if self.location == money.location:
@@ -311,11 +318,17 @@ class Person(Thing):
         """Is the enemy visible and suitably shootable?"""
         return self.enemy.location != None and self.enemy.is_alive
 
-    def shoot(self, target):
+    def shoot(self, target, aimed=False):
         """Shoot first, ask questions never"""
         gun = self.get_if_held(Gun)
         if gun:
-            print("fire!")
+            # Usually we'll aim and then fire, sometimes we'll just fire
+            if not aimed:
+                if random.randint(0, 5) > 1:
+                    print("aim")
+                    self.queue.append((self.shoot, target, True))
+                    return False
+            print("fire")
             log.debug("%s is trying to shoot %s", self.name, target.name)
             hit_weight = self.starting_hit_weight()
             if gun.num_bullets == 1:
@@ -323,11 +336,12 @@ class Person(Thing):
             if self.health < DEFAULT_HEALTH:
                 hit_weight += 1
 
-            weighted_hit_or_miss = [('miss', 3), ('nick', 5 * hit_weight), ('hit', 1 * hit_weight)]
+            weighted_hit_or_miss = [('miss', 3), ('nick', 3 * hit_weight), ('hit', 1 * hit_weight)]
             hit_or_nick = random.choice([val for val, cnt in weighted_hit_or_miss for i in range(cnt)])
             print(GUN_DAMAGE[hit_or_nick]['message'].format(target.name))
             target.health += GUN_DAMAGE[hit_or_nick]['health']
             gun.num_bullets -= 1
+            return True
 
     def starting_hit_weight(self):
         """Return a state-dependent starting weight that can increase or decrease the likelihood of
@@ -353,7 +367,7 @@ class Person(Thing):
 
         if location.is_openable and location.is_open:
             print("go through {}".format(location))
-            self.queue.append((location.close, None))
+            self.queue.append((location.close,))
         else:
             print("go to {}".format(location))
 
@@ -411,12 +425,7 @@ class Person(Thing):
     def drop(self, obj, target):
         """Drop an object in a place or on a supporting object. Is a no-op if the actor doesn't have the object."""
         if self.get_if_held(obj.name):
-
-            # Is the location a place or a supporter? A supporter will itself have a location; a place won't.
-            if hasattr(target.location, 'location'):
-                print("put {} down at {}".format(obj.name, target.location.name))
-            else:
-                print("put {} on {}".format(obj.name, target.name))
+            print("put {} {} {}".format(obj.name, target.preposition, target.name))
             obj.move_to(target)
 
     def __init__(self, name):
@@ -497,6 +506,10 @@ class Gun(Thing):
         super(Gun, self).__init__(name)
         self.num_bullets = DEFAULT_NUM_BULLETS
 
+class Holster(Thing):
+    def __init__(self, name, preposition='in'):
+        super(Holster, self).__init__(name, preposition=preposition)
+
 class Container(Thing):
     """A Container is a vessel that can contain a thing (whisky)"""
     volume = 0
@@ -538,14 +551,14 @@ def init(delay):
     robber_gun.move_to(robber.right_hand)
     money = Thing('money')
     money.move_to(robber.left_hand)
-    robber_holster = Thing('holster')
+    robber_holster = Holster('holster')
     robber_holster.move_to(robber.body)
     robber.stage = stage  # A mechanism to get ahold of the world state
 
     sheriff = Sheriff('sheriff', delay=delay)
     sheriff_gun = Gun("sheriff's gun")
     sheriff_gun.move_to(sheriff.right_hand)
-    holster = Thing("sheriff's holster")
+    holster = Holster("sheriff's holster")
     holster.move_to(sheriff.body)
 
     sheriff.stage = stage
