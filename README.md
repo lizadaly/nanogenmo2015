@@ -42,42 +42,50 @@ through a single scene and outputs a simple text file mimicing the original
 (line breaks shortened for brevity):
 
 ```
-The gun is in the robber's right hand. The money is in the robber's left hand. The holster is on the robber. The sheriff's gun is in the sheriff's right hand. The sheriff's holster is on the sheriff. The glass is on the table. The bottle is on the table.
+ The gun is in the robber's right hand. The money is in the robber's
+ left hand. The holster is on the robber. The sheriff's gun is in the
+  sheriff's right hand. The sheriff's holster is on the sheriff. The
+          glass is on the table. The bottle is on the table.
 
-ROBBER
-(The robber is at the window.) Open door; go through door; close door; go to corner; put money on corner; go to table; go to window; check gun; go to corner; go to table; pick up the glass with the robber's left hand; go to window; go to corner; count money
+                                ROBBER
+      (The robber is at the window.) Open door; go through door;
+  close door; go to corner; put money on corner; go to table; go to
+ window; check gun; go to corner; go to table; pick up the glass with
+   the robber's left hand; go to window; go to corner; count money
 
-SHERIFF
-Go to window; open door; go through door
+                               SHERIFF
+               Go to window; open door; go through door
 
-ROBBER
-Fire; sheriff NICKED
+                                ROBBER
+                         Fire; sheriff NICKED
 
-SHERIFF
-Close door; aim
+                               SHERIFF
+                           Close door; aim
 
-ROBBER
-Fire; MISSED
+                                ROBBER
+                             Fire; MISSED
 
-SHERIFF
-Fire; MISSED
+                               SHERIFF
+                             Fire; MISSED
 
-ROBBER
-Fire; sheriff NICKED
+                                ROBBER
+                         Fire; sheriff NICKED
 
-SHERIFF
-Aim; fire; robber NICKED
+                               SHERIFF
+                       Aim; fire; robber NICKED
 
-ROBBER
-Aim; fire; sheriff HIT; aim; fire; sheriff NICKED
+                                ROBBER
+          Aim; fire; sheriff HIT; aim; fire; sheriff NICKED
 
-SHERIFF
-Sheriff dies.
+                               SHERIFF
+                            Sheriff dies.
 
-ROBBER
-Blow out barrel; put gun in holster; pick up the money with the robber's right hand; go to table; open door; go through door; close door
+                                ROBBER
+   Blow out barrel; put gun in holster; pick up the money with the
+ robber's right hand; go to table; open door; go through door; close
+                                 door
 
-CURTAIN
+                               CURTAIN
 ```
 
 The Story
