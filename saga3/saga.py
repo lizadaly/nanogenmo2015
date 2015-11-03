@@ -57,6 +57,7 @@ def action(actor):
     if stage.elapsed_time > MAX_TURNS:
         return actor
 
+    log.debug("Starting action for actor %s", actor)
     actor.set_starting_location(actor.default_location)
     actor.act()
 
@@ -145,18 +146,18 @@ class Person(Thing):
 
         if len(self.path) > 0:  # Actor really wants to be somewhere
             actor_initiative += HIGH_INITIATIVE
-            log.debug("+ %s init change for path movement: %s/%s", self.name, HIGH_INITIATIVE, actor_initiative)
+            #log.debug("+ %s init change for path movement: %s/%s", self.name, HIGH_INITIATIVE, actor_initiative)
 
         # If they're injured they're pretty mad
         injury_bonus = DEFAULT_HEALTH - self.health
         actor_initiative += injury_bonus
-        log.debug("+ %s init change for injury bonus: %s/%s", self.name, injury_bonus, actor_initiative)
+        #log.debug("+ %s init change for injury bonus: %s/%s", self.name, injury_bonus, actor_initiative)
 
         # They're also more excited if they're almost out of bullets
         if self.get_if_held(Gun):
             bullet_bonus = 10 if self.get_if_held(Gun).num_bullets == 1 else 0
             actor_initiative += bullet_bonus
-            log.debug("- %s init change for bullet bonus: %s/%s", self.name, bullet_bonus, actor_initiative)
+            #log.debug("- %s init change for bullet bonus: %s/%s", self.name, bullet_bonus, actor_initiative)
 
         return max(1, actor_initiative)
 
@@ -181,6 +182,7 @@ class Person(Thing):
 
         # If there's a target location, try to go there
         if len(self.path) > 0:
+            log.debug("Got a path event, walking it")
             next_location = self.path[0]
             if self.go(next_location):
                 # If going there was successful, set their new location and drop it from the path
@@ -189,8 +191,20 @@ class Person(Thing):
 
         # If the enemy is present, try to kill them!
         if self.enemy_is_present():
-            # Pretend for now that you have the gun
-            self.shoot(self.enemy)
+            # If we don't have the gun, go find it!
+            if isinstance(self, Sheriff):  # Lame
+                gun = stage.find("sheriff's gun")
+            else:
+                gun = stage.find("gun")
+            if self.get_if_held(gun):
+                self.shoot(self.enemy)
+            else:
+                # Immediately go to the location where the gun is (unless the location is a supporter)
+                target_location = gun.location
+                self.go(target_location)
+                # ...then queue taking the gun and shooting it!
+                self.queue.append((self.shoot, self.enemy))
+                self.queue.append((self.take, gun))
             return
 
         # If the enemy is dead, take the money and run
@@ -207,6 +221,7 @@ class Person(Thing):
         # Random behaviors
         weighted_choice = [('drink', 5), ('wander', 3), ('check', 1), ('lean', 1), ('count', 1), ('drop', 1)]
         choice = random.choice([val for val, cnt in weighted_choice for i in range(cnt)])
+        log.debug("%s chose to %s", self.name, choice)
         if choice == 'drink':
             # Try to drink from the glass if we're holding it
             glass = stage.find('glass')
@@ -214,6 +229,7 @@ class Person(Thing):
                 # ...and it's full, just drink from it
                 if glass.full:
                     glass.drink(self)
+                    return True
                 # If not, try to pour a glass from the bottle
                 else:
                     bottle = stage.find('bottle')
@@ -242,7 +258,7 @@ class Person(Thing):
         elif choice == 'check':
             if self.get_if_held(Gun):
                 print("check gun")
-            return True
+                return True
         elif choice == 'count':
             if self.can_reach_obj(stage.find('money')):
                 print("count money")
@@ -255,10 +271,14 @@ class Person(Thing):
             obj = self.get_held_obj(self.right_hand)
             if obj and not isinstance(obj, Gun):
                 self.drop(obj, self.location)
+                return True
             else:
                 obj = self.get_held_obj(self.left_hand)
                 if obj and not isinstance(obj, Gun):
                     self.drop(obj, self.location)
+                    return True
+        # If we fell threw and did nothing, try again
+        return self.act()
 
     def can_reach_obj(self, obj):
         """True if the Person can reach the object in question. The object must be either directly
@@ -284,7 +304,7 @@ class Person(Thing):
 
     def go_to_random_location(self):
         """Randomly go to a location that isn't the current one"""
-        location = random.choice([place for place in stage.places if place != self.location])
+        location = random.choice([place for place in stage.places if place != self.location and not isinstance(place, Door)])
         self.go(location)
 
     def enemy_is_present(self):
@@ -297,7 +317,7 @@ class Person(Thing):
         if gun:
             print("fire!")
             log.debug("%s is trying to shoot %s", self.name, target.name)
-            hit_weight = 1
+            hit_weight = self.starting_hit_weight()
             if gun.num_bullets == 1:
                 hit_weight += 1
             if self.health < DEFAULT_HEALTH:
@@ -309,6 +329,10 @@ class Person(Thing):
             target.health += GUN_DAMAGE[hit_or_nick]['health']
             gun.num_bullets -= 1
 
+    def starting_hit_weight(self):
+        """Return a state-dependent starting weight that can increase or decrease the likelihood of
+        the actor making a successful shot."""
+        return 1
 
     def go(self, location):
         """Try to move to the next location. If that location can be opened, like a door, open it first.
@@ -421,16 +445,19 @@ class Robber(Person):
 
     def act(self):
         """A set of conditions of high priority; these actions will be executed first"""
-
         if self.location.name == 'corner' and self.get_if_held('money') and self.enemy.is_alive:
             money = self.get_if_held('money')
             self.drop(money, self.location)
             return True
+
         return super(Robber, self).act()
 
+    def starting_hit_weight(self):
+        """The Robber (but _not_ the Sheriff) is a better shot if he's drunk"""
+        return self.inebriation + 2
 
 class Sheriff(Person):
-    """The Sheriff wants to kill the Robber and leave with the money. He does not drink as often and arrives
+    """The Sheriff wants to kill the Robber and leave with the money. He does not get a drink bonus and arrives
     on a delay."""
     def __init__(self, name, delay):
         super(Sheriff, self).__init__(name)
@@ -455,6 +482,13 @@ class Sheriff(Person):
         if self.location == None:
             self.path = ['window', 'door']
         return super(Sheriff, self).act()
+
+    def starting_hit_weight(self):
+        """The Sheriff (but _not_ the Robber) is a better shot if he's injured"""
+        weight = 1
+        if self.health < DEFAULT_HEALTH:
+            weight += 3
+        return weight
 
 class Gun(Thing):
     """A Gun is an object with a distinct property of being shootable and having a number of bullets"""
