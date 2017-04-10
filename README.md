@@ -21,7 +21,7 @@ PDF scan of the <a href="http://bitsavers.trailing-edge.com/pdf/mit/tx-0/memos/M
 includes examples of the branching and switching logic.
 
 The Art of Computer Programming, Volume 2 by Donald Knuth contains two examples of
-the original out. I used this as my reference implementation:
+the original output. I used this as my reference implementation:
 
 ![Page](images/knuth-quote.png)
 <a href="https://www.safaribooksonline.com/a/art-of-computer/514751/">First example</a> and <a href="https://www.safaribooksonline.com/a/art-of-computer/514752/">second example</a> [links are to the excerpts on <a href="https://www.safaribooksonline.com/">Safari</a>]
