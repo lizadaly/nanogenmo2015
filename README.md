@@ -6,7 +6,7 @@ SAGA III: NaNoGenMo2015
 Inspired by one of the earliest computer generated narratives: SAGA II, created by
 Douglas T. Ross and Harrison R. Morse at MIT and featured on _The Thinking Machine_,
 a 1962 television special co-produced by CBS and MIT. The entire hour-long
-special can be <a href="http://video.mit.edu/watch/the-thinking-machine-1961-mit-centennial-film-6712/">viewed at MIT</a>.
+special is <a href="https://www.youtube.com/watch?v=jPHUlQiwD9Y">online</a>.
 
 I came upon the work the day before NaNoGenMo started (!) while taking Mark Sample's EdX course on <a href="https://www.edx.org/course/electronic-literature-davidsonx-d004x">Electronic Literature</a>, where it's mentioned in a lecture. Hooray!
 
